@@ -10,6 +10,7 @@ from conf import *
 #from entryHelper import *
 import curses
 from curses import wrapper
+import time
 
 
 def main(stdscr):
@@ -21,16 +22,18 @@ def main(stdscr):
     stdscr.clear()
     stdscr.refresh()
 
+
+
     # Start colors in curses
     curses.start_color()
     curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)
     curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLACK)
     curses.init_pair(3, curses.COLOR_BLACK, curses.COLOR_WHITE)
 
+    
     #One time call crawler
     topic_results = get_popular_topics(POPULAR_PAGE_URL)
 
-    selectMatch = -1
     cursor_y = 4
     cursor_x = 1
     # Loop where k is the last character pressed
@@ -73,16 +76,16 @@ def main(stdscr):
         if k == ord('r'):
             print_topics(topic_results, stdscr, cursor_y)
         if k == 10:
-            requested_topic_entries = getEntriesForSelectedTopic(topic_results, selectMatch)
-            #print selected topic number
-            stdscr.addstr(1, 40, str(selectMatch))
+            entry_list = get_entries_for_selected_topic(topic_results, cursor_y - 5)
+            selected_entry = 1
 
             padKey = 0
             entryPad = curses.newpad(height - 10, width - 90)
+            
             cursor_pad_x = 0
             cursor_pad_y = 4
 
-            while (padKey != 68):
+            while (padKey != ord('q')):
                 # Create Entry Pad
                 entryPad.clear()
                 pad_height, pad_width = entryPad.getmaxyx()
@@ -92,7 +95,25 @@ def main(stdscr):
                     cursor_pad_y = cursor_pad_y + 1
                 elif padKey == 65 or padKey == 259:
                     cursor_pad_y = cursor_pad_y - 1
+                elif padKey == 67 or padKey == 260:
+                    #right
+                    #cursor_pad_x = cursor_pad_x + 1
+                    current_page = selected_entry // 10
+                    selected_entry = selected_entry + 1
+                    
+                    if selected_entry // 10 != current_page:
+                        entry_list = get_entries_for_selected_topic(topic_results, cursor_y - 5, selected_entry // 10 + 1)
 
+
+                elif padKey == 68 or padKey == 261:
+                    #left
+                    #cursor_pad_x = cursor_pad_x - 1
+                    current_page = selected_entry // 10
+                    if selected_entry > 1:
+                        selected_entry = selected_entry - 1
+                    
+                    if selected_entry // 10 != current_page:
+                        entry_list = get_entries_for_selected_topic(topic_results, cursor_y - 5, selected_entry // 10 + 1)
 
                 cursor_pad_x = max(0, cursor_pad_x)
                 cursor_pad_x = min(pad_width-1, cursor_pad_x)
@@ -100,21 +121,45 @@ def main(stdscr):
                 cursor_pad_y = max(0, cursor_pad_y)
                 cursor_pad_y = min(pad_height-1, cursor_pad_y)
 
-                for topic_name, topic_entries in requested_topic_entries.items():
-                    entryPad.attron(curses.A_BOLD)
-                    entryPad.attron(curses.color_pair(2))
-                    entryPad.addstr(4, 1 , "{0}\n\n".format(topic_name.decode('utf-8')))
-                    entryPad.attroff(curses.A_BOLD)
-                    entryPad.attroff(curses.color_pair(2))
+                #print topic name
+                entryPad.attron(curses.A_BOLD)
+                entryPad.attron(curses.color_pair(2))
+                entryPad.addstr(4, 1 , "{0}\n\n".format(topic_results[cursor_y - 5][2]))
+                entryPad.attroff(curses.A_BOLD)
+                entryPad.attroff(curses.color_pair(2))
 
-                    for index, entry in enumerate(topic_entries):
-                        entryPad.addstr("{0} - ({1})".format(index, entry))
+                entry = entry_list[selected_entry % 10]
+                #print entry & author info
+                entryPad.attron(curses.A_BOLD)
+                entryPad.attron(curses.color_pair(2))
+                entryPad.addstr("\n{0} -- {1}\n\n".format(entry.author, entry.entry_date))
+                entryPad.attroff(curses.A_BOLD)
+                entryPad.attroff(curses.color_pair(2))
 
+                #print content
+                entryPad.addstr(entry.content)
+
+                #for printing all entries    
+                # for index, entry in enumerate(entry_list):
+
+                #     entryPad.attron(curses.A_BOLD)
+                #     entryPad.attron(curses.color_pair(2))
+                #     entryPad.addstr("\n{0} -- {1}\n".format(entry.author, entry.entry_date))
+                #     entryPad.attroff(curses.A_BOLD)
+                #     entryPad.attroff(curses.color_pair(2))
+
+                #     entryPad.addstr("{0}".format(entry.content))
+
+                  
+                #entryPad.clrtobot()
                 entryPad.move(cursor_pad_y, cursor_pad_x)
                 entryPad.refresh(0, 0, 4, 80, height - 6, width - 10)
 
                 padKey = entryPad.getch()
-
+            
+            #lets clear the screen & reload
+            stdscr.clear()
+            print_topics(topic_results, stdscr, cursor_y)
 
         
 
@@ -208,22 +253,32 @@ def print_topics(topic_results, stdscr, cursor_y):
         else:
             stdscr.addstr( 4 + t_index, 1, "{0} - {1} ({2})".format(t_index, t_name[0:41], str(t_entry_count)))
 
-def get_entries_for_selected_topic(results, selected_topic):
-  
+def get_entries_for_selected_topic(results, selected_topic, page = 1):
+    entries = []
+    entries_page = parse_page(PAGE_URL+results[selected_topic][1]+'&p='+str(page))
 
-    selected_topic_links = []
-    selected_topic_entries = defaultdict(list)
+    entry_list = entries_page.find_all('div','content')
+    entry_info_list = entries_page.find_all('div', 'info')
 
-    for topic_index in selected_topic_indexes:
-        for topic_result in results:
-            if topic_index == topic_result[0]:
-                topic_link = topic_result[1]
-                topic_name = topic_result[2]
 
-                selected_topic_links.append(topic_link)
-                selected_topic_entries[topic_name] = get_entries_for_topic(topic_link, entry_count_per_topic)
+    for index in range(len(entry_list)):
+        content = entry_list[index].text
+        permalink = entry_info_list[index].find_all('a', 'entry-date permalink', href = True)[0]['href']
+        entry_date = entry_info_list[index].find_all('a', 'entry-date permalink', href = True)[0].text
+        author = entry_info_list[index].find_all('a', 'entry-author', href = True)[0].text
 
-    return selected_topic_entries
+        entry = Entry(content, permalink, entry_date, author)
+        entries.append(entry)
+
+    return entries
+
+class Entry():
+    def __init__(self, content, permalink, entry_date, author):
+        self.content = content
+        self.permalink = permalink
+        self.entry_date = entry_date
+        self.author = author
+
 
 if __name__ == '__main__':
     wrapper(main)
